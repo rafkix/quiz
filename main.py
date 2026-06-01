@@ -16,6 +16,7 @@ dp = Dispatcher()
 # LOAD QUESTIONS
 # =========================================
 
+
 def load_questions(path: str):
 
     wb = load_workbook(path)
@@ -24,7 +25,6 @@ def load_questions(path: str):
     questions = []
 
     for row in ws.iter_rows(min_row=2, values_only=True):
-
         try:
             _, question, a, b, c, d, correct, *_ = row
 
@@ -48,16 +48,15 @@ def load_questions(path: str):
 
             poll_options = [x[1] for x in options]
 
-            correct_index = next(
-                i for i, x in enumerate(options)
-                if x[0] == correct
-            )
+            correct_index = next(i for i, x in enumerate(options) if x[0] == correct)
 
-            questions.append({
-                "question": str(question).strip(),
-                "options": poll_options,
-                "correct_index": correct_index,
-            })
+            questions.append(
+                {
+                    "question": str(question).strip(),
+                    "options": poll_options,
+                    "correct_index": correct_index,
+                }
+            )
 
         except Exception as e:
             print("ERROR:", e)
@@ -79,6 +78,7 @@ users = {}
 # START COMMAND
 # =========================================
 
+
 @dp.message(Command("start"))
 async def start_test(message: Message):
 
@@ -92,19 +92,15 @@ async def start_test(message: Message):
         "score": 0,
     }
 
-    await message.answer(
-        f"✅ Quiz boshlandi!\n\n"
-        f"Jami savollar: {len(questions)}"
-    )
+    await message.answer(f"✅ Quiz boshlandi!\n\nJami savollar: {len(questions)}")
 
-    await send_question(
-        user_id=message.from_user.id,
-        chat_id=message.chat.id
-    )
+    await send_question(user_id=message.from_user.id, chat_id=message.chat.id)
+
 
 # =========================================
 # SEND QUESTION
 # =========================================
+
 
 async def send_question(user_id: int, chat_id: int):
 
@@ -113,7 +109,6 @@ async def send_question(user_id: int, chat_id: int):
     index = user["index"]
 
     if index >= len(user["questions"]):
-
         score = user["score"]
 
         await bot.send_message(
@@ -121,7 +116,7 @@ async def send_question(user_id: int, chat_id: int):
             f"🎉 Test tugadi!\n\n"
             f"✅ To'g'ri javoblar: {score}\n"
             f"❌ Noto'g'ri javoblar: {len(user['questions']) - score}\n"
-            f"📊 Jami: {len(user['questions'])}"
+            f"📊 Jami: {len(user['questions'])}",
         )
 
         del users[user_id]
@@ -137,14 +132,17 @@ async def send_question(user_id: int, chat_id: int):
         type="quiz",
         correct_option_id=q["correct_index"],
         is_anonymous=False,
+        explanation=f"✅ To'g'ri javob: {q['options'][q['correct_index']]}",
     )
 
     # SAVE POLL ID
     q["poll_id"] = poll.poll.id
 
+
 # =========================================
 # POLL ANSWER
 # =========================================
+
 
 @dp.poll_answer()
 async def handle_poll_answer(poll_answer: PollAnswer):
@@ -176,20 +174,20 @@ async def handle_poll_answer(poll_answer: PollAnswer):
 
     await asyncio.sleep(0.5)
 
-    await send_question(
-        user_id=user_id,
-        chat_id=user_id
-    )
+    await send_question(user_id=user_id, chat_id=user_id)
+
 
 # =========================================
 # MAIN
 # =========================================
+
 
 async def main():
 
     print("Bot started...")
 
     await dp.start_polling(bot)
+
 
 if __name__ == "__main__":
     asyncio.run(main())
