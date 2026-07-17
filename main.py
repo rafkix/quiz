@@ -1,13 +1,35 @@
 import asyncio
+import copy
+import logging
+import os
 import random
 
 from aiogram import Bot, Dispatcher
 from aiogram.filters import Command
 from aiogram.types import Message, PollAnswer
-
+from dotenv import load_dotenv
 from openpyxl import load_workbook
 
-TOKEN = "8362385287:AAHFnDyohylaB8Pv7iMo1mWd0kSEaqWN_Q0"
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+)
+logger = logging.getLogger(__name__)
+
+# =========================================
+# CONFIG
+# =========================================
+
+load_dotenv()
+
+TOKEN = os.environ.get("BOT_TOKEN")
+if not TOKEN:
+    raise RuntimeError(
+        "BOT_TOKEN topilmadi. Loyiha papkasida .env fayl yarating va "
+        "ichiga BOT_TOKEN=your_token_here deb yozing."
+    )
+
+QUESTIONS_FILE = os.environ.get("QUESTIONS_FILE", "jismoniy_tarbiya_testlari.xlsx")
 
 bot = Bot(TOKEN)
 dp = Dispatcher()
@@ -17,48 +39,69 @@ dp = Dispatcher()
 # =========================================
 
 
-def load_questions(path):
+def load_questions(path: str) -> list[dict]:
     wb = load_workbook(path)
     ws = wb.active
 
     questions = []
+    skipped = 0
 
-    for row in ws.iter_rows(min_row=2, values_only=True):
-        (
-            _,
-            topic,
-            question,
-            ideal_answer,
-            explanation,
-            common_mistakes,
-            follow_up,
-            difficulty,
-        ) = row
+    for row_num, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
+        try:
+            _, question, a, b, c, d, correct, *_ = row
 
-        questions.append(
-            {
-                "topic": topic,
-                "question": question,
-                "answer": ideal_answer,
-                "explanation": explanation,
-                "mistakes": common_mistakes,
-                "follow_up": follow_up,
-                "difficulty": difficulty,
-            }
-        )
+            if not question:
+                skipped += 1
+                continue
 
+            options = [
+                ("A", str(a).strip()),
+                ("B", str(b).strip()),
+                ("C", str(c).strip()),
+                ("D", str(d).strip()),
+            ]
+
+            correct = str(correct).strip().upper()
+
+            if correct not in ("A", "B", "C", "D"):
+                logger.warning("Row %d: noto'g'ri correct qiymati (%r), o'tkazib yuborildi", row_num, correct)
+                skipped += 1
+                continue
+
+            random.shuffle(options)
+
+            poll_options = [x[1] for x in options]
+            correct_index = next(i for i, x in enumerate(options) if x[0] == correct)
+
+            questions.append(
+                {
+                    "question": str(question).strip(),
+                    "options": poll_options,
+                    "correct_index": correct_index,
+                }
+            )
+
+        except Exception:
+            logger.exception("Row %d: qatorni o'qishda xatolik, o'tkazib yuborildi", row_num)
+            skipped += 1
+
+    logger.info("Yuklandi: %d ta savol, o'tkazib yuborildi: %d", len(questions), skipped)
     return questions
 
 
-QUESTIONS = load_questions("Data_Analytics_Interview_100.xlsx")
+QUESTIONS = load_questions(QUESTIONS_FILE)
 
-print(f"Loaded questions: {len(QUESTIONS)}")
+if not QUESTIONS:
+    raise RuntimeError(
+        f"'{QUESTIONS_FILE}' faylidan bironta ham savol yuklanmadi. "
+        "Fayl yo'li va ustunlar tartibini tekshiring."
+    )
 
 # =========================================
-# USERS
+# USERS (in-memory session state)
 # =========================================
 
-users = {}
+users: dict[int, dict] = {}
 
 # =========================================
 # START COMMAND
@@ -67,9 +110,9 @@ users = {}
 
 @dp.message(Command("start"))
 async def start_test(message: Message):
-
-    questions = QUESTIONS[:]
-
+    # MUHIM: deepcopy - aks holda barcha userlar bitta xotiradagi
+    # savol obyektlarini ulashadi va poll_id/score bir-birini buzadi.
+    questions = copy.deepcopy(QUESTIONS)
     random.shuffle(questions)
 
     users[message.from_user.id] = {
@@ -89,39 +132,46 @@ async def start_test(message: Message):
 
 
 async def send_question(user_id: int, chat_id: int):
-
-    user = users[user_id]
+    user = users.get(user_id)
+    if user is None:
+        return
 
     index = user["index"]
 
     if index >= len(user["questions"]):
         score = user["score"]
+        total = len(user["questions"])
 
         await bot.send_message(
             chat_id,
             f"🎉 Test tugadi!\n\n"
             f"✅ To'g'ri javoblar: {score}\n"
-            f"❌ Noto'g'ri javoblar: {len(user['questions']) - score}\n"
-            f"📊 Jami: {len(user['questions'])}",
+            f"❌ Noto'g'ri javoblar: {total - score}\n"
+            f"📊 Jami: {total}",
         )
 
         del users[user_id]
-
         return
 
     q = user["questions"][index]
 
-    poll = await bot.send_poll(
-        chat_id=chat_id,
-        question=q["question"],
-        options=q["options"],
-        type="quiz",
-        correct_option_id=q["correct_index"],
-        is_anonymous=False,
-        explanation=f"✅ To'g'ri javob: {q['options'][q['correct_index']]}",
-    )
+    try:
+        poll = await bot.send_poll(
+            chat_id=chat_id,
+            question=q["question"],
+            options=q["options"],
+            type="quiz",
+            correct_option_id=q["correct_index"],
+            is_anonymous=False,
+            explanation=f"✅ To'g'ri javob: {q['options'][q['correct_index']]}",
+        )
+    except Exception:
+        logger.exception("Poll yuborishda xatolik (user_id=%s, index=%s)", user_id, index)
+        await bot.send_message(chat_id, "⚠️ Savolni yuborishda xatolik yuz berdi, keyingisiga o'tamiz.")
+        user["index"] += 1
+        await send_question(user_id=user_id, chat_id=chat_id)
+        return
 
-    # SAVE POLL ID
     q["poll_id"] = poll.poll.id
 
 
@@ -132,13 +182,11 @@ async def send_question(user_id: int, chat_id: int):
 
 @dp.poll_answer()
 async def handle_poll_answer(poll_answer: PollAnswer):
-
     user_id = poll_answer.user.id
 
-    if user_id not in users:
+    user = users.get(user_id)
+    if user is None:
         return
-
-    user = users[user_id]
 
     index = user["index"]
 
@@ -147,8 +195,12 @@ async def handle_poll_answer(poll_answer: PollAnswer):
 
     q = user["questions"][index]
 
-    # CHECK POLL
-    if q["poll_id"] != poll_answer.poll_id:
+    if q.get("poll_id") != poll_answer.poll_id:
+        # Eski/qoldiq poll javobi - e'tiborsiz qoldiramiz
+        return
+
+    if not poll_answer.option_ids:
+        # User javobni bekor qildi
         return
 
     selected = poll_answer.option_ids[0]
@@ -169,9 +221,7 @@ async def handle_poll_answer(poll_answer: PollAnswer):
 
 
 async def main():
-
-    print("Bot started...")
-
+    logger.info("Bot ishga tushdi...")
     await dp.start_polling(bot)
 
 
