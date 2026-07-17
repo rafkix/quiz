@@ -17,49 +17,35 @@ dp = Dispatcher()
 # =========================================
 
 
-def load_questions(path: str):
-
+def load_questions(path):
     wb = load_workbook(path)
     ws = wb.active
 
     questions = []
 
     for row in ws.iter_rows(min_row=2, values_only=True):
-        try:
-            _, question, a, b, c, d, correct, *_ = row
+        (
+            _,
+            topic,
+            question,
+            ideal_answer,
+            explanation,
+            common_mistakes,
+            follow_up,
+            difficulty,
+        ) = row
 
-            if not question:
-                continue
-
-            options = [
-                ("A", str(a).strip()),
-                ("B", str(b).strip()),
-                ("C", str(c).strip()),
-                ("D", str(d).strip()),
-            ]
-
-            correct = str(correct).strip().upper()
-
-            if correct not in ["A", "B", "C", "D"]:
-                continue
-
-            # RANDOM ANSWERS
-            random.shuffle(options)
-
-            poll_options = [x[1] for x in options]
-
-            correct_index = next(i for i, x in enumerate(options) if x[0] == correct)
-
-            questions.append(
-                {
-                    "question": str(question).strip(),
-                    "options": poll_options,
-                    "correct_index": correct_index,
-                }
-            )
-
-        except Exception as e:
-            print("ERROR:", e)
+        questions.append(
+            {
+                "topic": topic,
+                "question": question,
+                "answer": ideal_answer,
+                "explanation": explanation,
+                "mistakes": common_mistakes,
+                "follow_up": follow_up,
+                "difficulty": difficulty,
+            }
+        )
 
     return questions
 
