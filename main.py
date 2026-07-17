@@ -50,7 +50,7 @@ def load_questions(path):
     return questions
 
 
-QUESTIONS = load_questions("jismoniy_tarbiya_testlari.xlsx")
+QUESTIONS = load_questions("Data_Analytics_Interview_100.xlsx")
 
 print(f"Loaded questions: {len(QUESTIONS)}")
 
