@@ -7,7 +7,7 @@ from aiogram.types import Message, PollAnswer
 
 from openpyxl import load_workbook
 
-TOKEN = "8362385287:AAGo2Sd868fFm57_QmUIdubwhqd5swED_RM"
+TOKEN = "8362385287:AAHFnDyohylaB8Pv7iMo1mWd0kSEaqWN_Q0"
 
 bot = Bot(TOKEN)
 dp = Dispatcher()
